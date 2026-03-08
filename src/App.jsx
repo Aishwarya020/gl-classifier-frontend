@@ -31,8 +31,8 @@ const fmt = n => "$" + Math.abs(n).toLocaleString("en-US", { minimumFractionDigi
 // ═══════════════════════════════════════════════════════════════════════════════
 // SMALL COMPONENTS
 // ═══════════════════════════════════════════════════════════════════════════════
-function ConfBadge({ confidence }) {
-  const pct = Math.round(confidence * 100);
+function ConfBadge({ confidence_score }) {
+  const pct = Math.round(confidence_score * 100);
   const cls = pct >= 85 ? "bg-emerald-500/20 text-emerald-400" : pct >= 60 ? "bg-amber-500/20 text-amber-400" : "bg-red-500/20 text-red-400";
   const dot = pct >= 85 ? "bg-emerald-400" : pct >= 60 ? "bg-amber-400" : "bg-red-400";
   return <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold font-mono ${cls}`}><span className={`w-1.5 h-1.5 rounded-full ${dot}`}/>{pct}%</span>;
@@ -201,13 +201,13 @@ function AccountantView({ transactions }) {
   const [overrides, setOverrides] = useState({});
   const [approved, setApproved]   = useState({});
 
-  const needsReview = transactions.filter(t => t.gl_code === "REVIEW");
-  const medium      = transactions.filter(t => t.confidence >= 0.6 && t.confidence < 0.85 && t.gl_code !== "REVIEW");
-  const high        = transactions.filter(t => t.confidence >= 0.85 && t.gl_code !== "REVIEW");
+  const needsReview = transactions.filter(t => t.assigned_gl_code === "REVIEW");
+  const medium      = transactions.filter(t => t.confidence_score >= 0.6 && t.confidence_score < 0.85 && t.assigned_gl_code !== "REVIEW");
+  const high        = transactions.filter(t => t.confidence_score >= 0.85 && t.assigned_gl_code !== "REVIEW");
   const totalSpend  = transactions.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
-  const autoCount   = transactions.filter(t => t.gl_code !== "REVIEW").length;
+  const autoCount   = transactions.filter(t => t.assigned_gl_code !== "REVIEW").length;
   const filtered    = filter === "review" ? needsReview : filter === "medium" ? medium : filter === "high" ? high : transactions;
-  const allCodes    = [...new Set(transactions.filter(t => t.gl_code !== "REVIEW").map(t => t.gl_code))].sort();
+  const allCodes    = [...new Set(transactions.filter(t => t.assigned_gl_code !== "REVIEW").map(t => t.assigned_gl_code))].sort();
 
   return (
     <div className="space-y-5">
@@ -245,23 +245,23 @@ function AccountantView({ transactions }) {
             <tbody>
               {filtered.map((t, i) => {
                 const isApproved = approved[i];
-                const code = overrides[i] || t.gl_code;
+                const code = overrides[i] || t.assigned_gl_code;
                 const isExpanded = expanded === i;
                 return (
                   <>
                     <tr key={`row-${i}`}
                       onClick={() => !isApproved && setExpanded(isExpanded ? null : i)}
-                      className={`border-b border-slate-700/30 transition-colors ${isApproved ? "opacity-40" : t.gl_code==="REVIEW" ? "bg-red-500/5 hover:bg-red-500/10 cursor-pointer" : "hover:bg-slate-700/30 cursor-pointer"}`}>
+                      className={`border-b border-slate-700/30 transition-colors ${isApproved ? "opacity-40" : t.assigned_gl_code==="REVIEW" ? "bg-red-500/5 hover:bg-red-500/10 cursor-pointer" : "hover:bg-slate-700/30 cursor-pointer"}`}>
                       <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">{t.date}</td>
-                      <td className="px-4 py-3 text-slate-300 max-w-[220px]"><div className="truncate text-xs" title={t.desc_raw}>{t.desc_raw}</div></td>
+                      <td className="px-4 py-3 text-slate-300 max-w-[220px]"><div className="truncate text-xs" title={t.description}>{t.description}</div></td>
                       <td className={`px-4 py-3 font-mono text-right text-sm font-medium whitespace-nowrap ${t.amount < 0 ? "text-emerald-400" : "text-white"}`}>
                         {t.amount < 0 ? `(${fmt(t.amount)})` : fmt(t.amount)}
                       </td>
                       <td className="px-4 py-3">
                         <span className={`font-mono text-xs font-bold px-2 py-1 rounded ${code==="REVIEW" ? "bg-red-500/20 text-red-400" : "bg-slate-700 text-amber-400"}`}>{code}</span>
                       </td>
-                      <td className="px-4 py-3"><ConfBadge confidence={t.confidence} /></td>
-                      <td className="px-4 py-3"><MethodTag method={t.method} /></td>
+                      <td className="px-4 py-3"><ConfBadge confidence_score={t.confidence_score} /></td>
+                      <td className="px-4 py-3"><MethodTag method={t.match_method} /></td>
                       <td className="px-4 py-3">
                         {isApproved
                           ? <span className="text-xs text-emerald-500 font-bold">✓ Done</span>
@@ -277,7 +277,7 @@ function AccountantView({ transactions }) {
                             <div>
                               <div className="text-xs text-slate-500 font-mono uppercase tracking-wider mb-2">Classification Reasoning</div>
                               <p className="text-sm text-slate-300 leading-relaxed">{t.reasoning}</p>
-                              <div className="mt-3"><MethodTag method={t.method} /></div>
+                              <div className="mt-3"><MethodTag method={t.match_method} /></div>
                             </div>
                             <div>
                               <div className="text-xs text-slate-500 font-mono uppercase tracking-wider mb-2">Override GL Code</div>
@@ -316,13 +316,13 @@ function FinanceView({ transactions }) {
   const totalSpend   = positiveOnly.reduce((s, t) => s + t.amount, 0);
   const byGl = useMemo(() => {
     const map = {};
-    positiveOnly.forEach(t => { const k = t.gl_code === "REVIEW" ? "REVIEW" : t.gl_code; map[k] = (map[k]||0) + t.amount; });
+    positiveOnly.forEach(t => { const k = t.assigned_gl_code === "REVIEW" ? "REVIEW" : t.assigned_gl_code; map[k] = (map[k]||0) + t.amount; });
     return Object.entries(map).map(([code, amount]) => ({ code, label: GL_LABELS[code]||code, amount: Math.round(amount) })).sort((a,b) => b.amount-a.amount).slice(0,9);
   }, [transactions]);
-  const l1 = transactions.filter(t => t.method?.includes("Layer 1")).length;
-  const l2 = transactions.filter(t => t.method?.includes("Layer 2")).length;
-  const l3 = transactions.filter(t => t.method?.includes("Layer 3")||t.method?.includes("Claude")).length;
-  const manual = transactions.filter(t => t.gl_code === "REVIEW").length;
+  const l1 = transactions.filter(t => t.match_method?.includes("Layer 1")).length;
+  const l2 = transactions.filter(t => t.match_method?.includes("Layer 2")).length;
+  const l3 = transactions.filter(t => t.match_method?.includes("Layer 3")||t.match_method?.includes("Claude")).length;
+  const manual = transactions.filter(t => t.assigned_gl_code === "REVIEW").length;
   const autoCount = transactions.length - manual;
   const CustomTooltip = ({ active, payload }) => {
     if (!active||!payload?.length) return null;
@@ -386,10 +386,10 @@ function FinanceView({ transactions }) {
 function DepartmentView({ transactions }) {
   const [dept, setDept] = useState("marketing");
   const d = DEPT_CODES[dept];
-  const myTxns = transactions.filter(t => d.codes.includes(t.gl_code) && t.amount > 0);
+  const myTxns = transactions.filter(t => d.codes.includes(t.assigned_gl_code) && t.amount > 0);
   const spent  = myTxns.reduce((s, t) => s + t.amount, 0);
   const pct    = Math.min((spent / d.budget) * 100, 100);
-  const byCode = d.codes.map(code => ({ code, label:GL_LABELS[code]||code, amount:myTxns.filter(t=>t.gl_code===code).reduce((s,t)=>s+t.amount,0), count:myTxns.filter(t=>t.gl_code===code).length })).filter(c=>c.amount>0).sort((a,b)=>b.amount-a.amount);
+  const byCode = d.codes.map(code => ({ code, label:GL_LABELS[code]||code, amount:myTxns.filter(t=>t.assigned_gl_code===code).reduce((s,t)=>s+t.amount,0), count:myTxns.filter(t=>t.assigned_gl_code===code).length })).filter(c=>c.amount>0).sort((a,b)=>b.amount-a.amount);
   return (
     <div className="space-y-5">
       <div className="flex gap-2 flex-wrap">
@@ -404,7 +404,7 @@ function DepartmentView({ transactions }) {
         <StatCard label="Dept Spend"   value={fmt(spent)}          sub={`Budget: ${fmt(d.budget)}`} />
         <StatCard label="Transactions" value={myTxns.length}       sub="This period" />
         <StatCard label="Budget Used"  value={`${pct.toFixed(0)}%`} sub={`${fmt(d.budget-spent)} remaining`} accent={pct>85?"text-red-400":pct>65?"text-amber-400":"text-emerald-400"} />
-        <StatCard label="Vendors"      value={new Set(myTxns.map(t=>t.desc_raw.split(" ")[0])).size} sub="Unique vendors" />
+        <StatCard label="Vendors"      value={new Set(myTxns.map(t=>t.description.split(" ")[0])).size} sub="Unique vendors" />
       </div>
       <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-5">
         <div className="flex justify-between text-xs font-mono text-slate-500 mb-2"><span>{d.icon} {d.label} — Budget Utilisation</span><span>{fmt(spent)} of {fmt(d.budget)}</span></div>
@@ -432,8 +432,8 @@ function DepartmentView({ transactions }) {
               {myTxns.slice(0,20).map((t,i) => (
                 <tr key={i} className="border-b border-slate-700/20 hover:bg-slate-700/20 transition-colors">
                   <td className="px-4 py-2 font-mono text-slate-500 whitespace-nowrap">{t.date}</td>
-                  <td className="px-4 py-2 text-slate-300 max-w-[200px] truncate">{t.desc_raw}</td>
-                  <td className="px-4 py-2"><span className="font-mono font-bold bg-slate-700 text-amber-400 px-2 py-0.5 rounded">{t.gl_code}</span></td>
+                  <td className="px-4 py-2 text-slate-300 max-w-[200px] truncate">{t.description}</td>
+                  <td className="px-4 py-2"><span className="font-mono font-bold bg-slate-700 text-amber-400 px-2 py-0.5 rounded">{t.assigned_gl_code}</span></td>
                   <td className="px-4 py-2 font-mono text-right text-white font-medium">{fmt(t.amount)}</td>
                 </tr>
               ))}
@@ -452,11 +452,11 @@ function AuditorView({ transactions }) {
   const [anomalyOnly, setAnomalyOnly] = useState(false);
   const THRESHOLD = 500;
   const anomalies = transactions.filter(t => t.amount > THRESHOLD);
-  const autoCount = transactions.filter(t => t.gl_code !== "REVIEW").length;
-  const l1 = transactions.filter(t => t.method?.includes("Layer 1")).length;
-  const l2 = transactions.filter(t => t.method?.includes("Layer 2")).length;
-  const l3 = transactions.filter(t => t.method?.includes("Layer 3")||t.method?.includes("Claude")).length;
-  const manual = transactions.filter(t => t.gl_code === "REVIEW").length;
+  const autoCount = transactions.filter(t => t.assigned_gl_code !== "REVIEW").length;
+  const l1 = transactions.filter(t => t.match_method?.includes("Layer 1")).length;
+  const l2 = transactions.filter(t => t.match_method?.includes("Layer 2")).length;
+  const l3 = transactions.filter(t => t.match_method?.includes("Layer 3")||t.match_method?.includes("Claude")).length;
+  const manual = transactions.filter(t => t.assigned_gl_code === "REVIEW").length;
   const displayed = anomalyOnly ? anomalies : transactions;
   return (
     <div className="space-y-5">
@@ -508,11 +508,11 @@ function AuditorView({ transactions }) {
               {displayed.map((t,i) => (
                 <tr key={i} className={`border-b border-slate-700/20 transition-colors ${t.amount>THRESHOLD?"bg-amber-500/5":"hover:bg-slate-700/20"}`}>
                   <td className="px-4 py-2.5 font-mono text-slate-500 whitespace-nowrap">{t.date}</td>
-                  <td className="px-4 py-2.5 text-slate-300 max-w-[180px] truncate">{t.amount>THRESHOLD&&<span className="text-amber-400 mr-1">⚠</span>}{t.desc_raw}</td>
+                  <td className="px-4 py-2.5 text-slate-300 max-w-[180px] truncate">{t.amount>THRESHOLD&&<span className="text-amber-400 mr-1">⚠</span>}{t.description}</td>
                   <td className={`px-4 py-2.5 font-mono text-right font-bold whitespace-nowrap ${t.amount<0?"text-emerald-400":"text-white"}`}>{t.amount<0?`(${fmt(t.amount)})`:fmt(t.amount)}</td>
-                  <td className="px-4 py-2.5"><span className={`font-mono font-bold px-2 py-0.5 rounded ${t.gl_code==="REVIEW"?"bg-red-500/20 text-red-400":"bg-slate-700 text-amber-400"}`}>{t.gl_code}</span></td>
-                  <td className="px-4 py-2.5"><ConfBadge confidence={t.confidence} /></td>
-                  <td className="px-4 py-2.5"><MethodTag method={t.method} /></td>
+                  <td className="px-4 py-2.5"><span className={`font-mono font-bold px-2 py-0.5 rounded ${t.assigned_gl_code==="REVIEW"?"bg-red-500/20 text-red-400":"bg-slate-700 text-amber-400"}`}>{t.assigned_gl_code}</span></td>
+                  <td className="px-4 py-2.5"><ConfBadge confidence_score={t.confidence_score} /></td>
+                  <td className="px-4 py-2.5"><MethodTag method={t.match_method} /></td>
                   <td className="px-4 py-2.5 text-slate-500 max-w-[220px] truncate" title={t.reasoning}>{t.reasoning}</td>
                 </tr>
               ))}
@@ -539,7 +539,7 @@ const PERSONAS = [
 
 function Dashboard({ transactions, onReset }) {
   const [persona, setPersona] = useState("accountant");
-  const autoCount = transactions.filter(t => t.gl_code !== "REVIEW").length;
+  const autoCount = transactions.filter(t => t.assigned_gl_code !== "REVIEW").length;
   return (
     <div className="min-h-screen bg-slate-900 text-white" style={{ fontFamily:"'IBM Plex Sans',sans-serif" }}>
       <div className="border-b border-slate-700/50 bg-slate-900/95 backdrop-blur-sm sticky top-0 z-10">

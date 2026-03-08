@@ -198,16 +198,53 @@ function ProcessingScreen({ progress }) {
 function AccountantView({ transactions }) {
   const [filter, setFilter]       = useState("review");
   const [expanded, setExpanded]   = useState(null);
-  const [overrides, setOverrides] = useState({});
-  const [approved, setApproved]   = useState({});
+  const [overrides, setOverrides] = useState({});  // keyed by original transaction index
+  const [approved, setApproved]   = useState({});  // keyed by original transaction index
 
-  const needsReview = transactions.filter(t => t.assigned_gl_code === "REVIEW");
-  const medium      = transactions.filter(t => t.confidence_score >= 0.6 && t.confidence_score < 0.85 && t.assigned_gl_code !== "REVIEW");
-  const high        = transactions.filter(t => t.confidence_score >= 0.85 && t.assigned_gl_code !== "REVIEW");
-  const totalSpend  = transactions.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
-  const autoCount   = transactions.filter(t => t.assigned_gl_code !== "REVIEW").length;
-  const filtered    = filter === "review" ? needsReview : filter === "medium" ? medium : filter === "high" ? high : transactions;
-  const allCodes    = [...new Set(transactions.filter(t => t.assigned_gl_code !== "REVIEW").map(t => t.assigned_gl_code))].sort();
+  const needsReview  = transactions.filter(t => t.assigned_gl_code === "REVIEW");
+  const medium       = transactions.filter(t => t.confidence_score >= 0.6 && t.confidence_score < 0.85 && t.assigned_gl_code !== "REVIEW");
+  const high         = transactions.filter(t => t.confidence_score >= 0.85 && t.assigned_gl_code !== "REVIEW");
+  const totalSpend   = transactions.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+  const autoCount    = transactions.filter(t => t.assigned_gl_code !== "REVIEW").length;
+  const filtered     = filter === "review" ? needsReview : filter === "medium" ? medium : filter === "high" ? high : transactions;
+  const allCodes     = [...new Set(transactions.filter(t => t.assigned_gl_code !== "REVIEW").map(t => t.assigned_gl_code))].sort();
+  const approvedCount = Object.values(approved).filter(Boolean).length;
+
+  // ── Export approved transactions as CSV ───────────────────────────────────
+  function exportApproved() {
+    const headers = ["Date","Description","Amount","Assigned_GL_Code","GL_Class","Confidence_Score","Match_Method","Reasoning"];
+    const rows = transactions
+      .map((t, idx) => ({ t, idx }))
+      .filter(({ idx }) => approved[idx])
+      .map(({ t, idx }) => {
+        const glCode = overrides[idx] || t.assigned_gl_code;
+        const glClass = GL_LABELS[glCode] || t.gl_class || glCode;
+        const method = overrides[idx] ? "Accountant Override" : t.match_method;
+        return [
+          t.date,
+          t.description,
+          t.amount,
+          glCode,
+          glClass,
+          (t.confidence_score * 100).toFixed(0) + "%",
+          method,
+          t.reasoning,
+        ].map(v => `"${String(v ?? "").replace(/"/g, '""')}"`);
+      });
+
+    if (rows.length === 0) return;
+    const csv = [headers.map(h => `"${h}"`), ...rows].map(r => r.join(",")).join("
+");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = `approved_transactions_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="space-y-5">
@@ -215,21 +252,29 @@ function AccountantView({ transactions }) {
         <StatCard label="Total Transactions" value={transactions.length} sub="This cycle" />
         <StatCard label="Auto-Classified"    value={autoCount} sub={`${((autoCount/transactions.length)*100).toFixed(1)}% of total`} accent="text-emerald-400" />
         <StatCard label="Needs Review"       value={needsReview.length} sub="Your action required" accent="text-red-400" />
-        <StatCard label="Total Spend"        value={`$${(totalSpend/1000).toFixed(1)}k`} sub="Positive transactions" accent="text-amber-400" />
+        <StatCard label="Approved"           value={approvedCount} sub={`of ${transactions.length} transactions`} accent="text-emerald-400" />
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        {[
-          { id:"all",    label:"All",                count:transactions.length },
-          { id:"review", label:"🔴 Needs Review",    count:needsReview.length },
-          { id:"medium", label:"🟡 Medium",          count:medium.length },
-          { id:"high",   label:"🟢 High Confidence", count:high.length },
-        ].map(f => (
-          <button key={f.id} onClick={() => { setFilter(f.id); setExpanded(null); }}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter===f.id ? "bg-amber-500 text-slate-900 font-bold" : "bg-slate-800 text-slate-400 hover:text-white border border-slate-700"}`}>
-            {f.label} <span className="opacity-60 text-xs">({f.count})</span>
-          </button>
-        ))}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap">
+          {[
+            { id:"all",    label:"All",                count:transactions.length },
+            { id:"review", label:"🔴 Needs Review",    count:needsReview.length },
+            { id:"medium", label:"🟡 Medium",          count:medium.length },
+            { id:"high",   label:"🟢 High Confidence", count:high.length },
+          ].map(f => (
+            <button key={f.id} onClick={() => { setFilter(f.id); setExpanded(null); }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter===f.id ? "bg-amber-500 text-slate-900 font-bold" : "bg-slate-800 text-slate-400 hover:text-white border border-slate-700"}`}>
+              {f.label} <span className="opacity-60 text-xs">({f.count})</span>
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={exportApproved}
+          disabled={approvedCount === 0}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all border ${approvedCount > 0 ? "bg-emerald-600/20 text-emerald-400 border-emerald-600/40 hover:bg-emerald-600/40 cursor-pointer" : "bg-slate-800/40 text-slate-600 border-slate-700/40 cursor-not-allowed"}`}>
+          ⬇ Export Approved CSV {approvedCount > 0 && <span className="bg-emerald-500 text-slate-900 text-xs font-black px-1.5 py-0.5 rounded-full">{approvedCount}</span>}
+        </button>
       </div>
 
       <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl overflow-hidden">
@@ -243,14 +288,15 @@ function AccountantView({ transactions }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((t, i) => {
-                const isApproved = approved[i];
-                const code = overrides[i] || t.assigned_gl_code;
-                const isExpanded = expanded === i;
+              {filtered.map((t) => {
+                const origIdx  = transactions.indexOf(t);
+                const isApproved = approved[origIdx];
+                const code     = overrides[origIdx] || t.assigned_gl_code;
+                const isExpanded = expanded === origIdx;
                 return (
                   <>
-                    <tr key={`row-${i}`}
-                      onClick={() => !isApproved && setExpanded(isExpanded ? null : i)}
+                    <tr key={`row-${origIdx}`}
+                      onClick={() => !isApproved && setExpanded(isExpanded ? null : origIdx)}
                       className={`border-b border-slate-700/30 transition-colors ${isApproved ? "opacity-40" : t.assigned_gl_code==="REVIEW" ? "bg-red-500/5 hover:bg-red-500/10 cursor-pointer" : "hover:bg-slate-700/30 cursor-pointer"}`}>
                       <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">{t.date}</td>
                       <td className="px-4 py-3 text-slate-300 max-w-[220px]"><div className="truncate text-xs" title={t.description}>{t.description}</div></td>
@@ -265,13 +311,13 @@ function AccountantView({ transactions }) {
                       <td className="px-4 py-3">
                         {isApproved
                           ? <span className="text-xs text-emerald-500 font-bold">✓ Done</span>
-                          : <button onClick={e => { e.stopPropagation(); setApproved(p=>({...p,[i]:true})); }}
+                          : <button onClick={e => { e.stopPropagation(); setApproved(p=>({...p,[origIdx]:true})); }}
                               className="px-3 py-1 bg-emerald-600/20 text-emerald-400 text-xs rounded-lg hover:bg-emerald-600/40 font-medium border border-emerald-600/20">Approve</button>
                         }
                       </td>
                     </tr>
                     {isExpanded && (
-                      <tr key={`exp-${i}`} className="bg-slate-900/80">
+                      <tr key={`exp-${origIdx}`} className="bg-slate-900/80">
                         <td colSpan={7} className="px-6 py-5">
                           <div className="grid grid-cols-2 gap-6">
                             <div>
@@ -284,7 +330,7 @@ function AccountantView({ transactions }) {
                               <div className="flex flex-wrap gap-2">
                                 {allCodes.slice(0, 12).map(c => (
                                   <button key={c}
-                                    onClick={() => { setOverrides(p=>({...p,[i]:c})); setApproved(p=>({...p,[i]:true})); setExpanded(null); }}
+                                    onClick={() => { setOverrides(p=>({...p,[origIdx]:c})); setApproved(p=>({...p,[origIdx]:true})); setExpanded(null); }}
                                     className={`px-3 py-1 rounded text-xs font-mono font-bold transition-all ${code===c ? "bg-amber-500 text-slate-900" : "bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white"}`}>{c}</button>
                                 ))}
                               </div>
@@ -301,7 +347,7 @@ function AccountantView({ transactions }) {
           </table>
         </div>
         <div className="px-4 py-3 border-t border-slate-700/30 text-xs text-slate-500 font-mono">
-          {filtered.length} transactions · Click row to expand &amp; override GL code
+          {filtered.length} transactions · Click row to expand &amp; override GL code · {approvedCount} approved
         </div>
       </div>
     </div>

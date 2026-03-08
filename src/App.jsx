@@ -245,6 +245,31 @@ function AccountantView({ transactions }) {
     URL.revokeObjectURL(url);
   }
 
+  // ── Download all 290 classified transactions as CSV ───────────────────────
+  function exportAll() {
+    const headers = ["Date","Description","Amount","Assigned_GL_Code","GL_Class","Confidence_Score","Match_Method","Reasoning"];
+    const rows = transactions.map(t => [
+      t.date,
+      t.description,
+      t.amount,
+      t.assigned_gl_code,
+      t.gl_class || GL_LABELS[t.assigned_gl_code] || t.assigned_gl_code,
+      (t.confidence_score * 100).toFixed(0) + "%",
+      t.match_method,
+      t.reasoning,
+    ].map(v => `"${String(v ?? "").replace(/"/g, '""')}"`));
+    const csv = [headers.map(h => `"${h}"`), ...rows].map(r => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = `classified_output_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -268,12 +293,19 @@ function AccountantView({ transactions }) {
             </button>
           ))}
         </div>
-        <button
-          onClick={exportApproved}
-          disabled={approvedCount === 0}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all border ${approvedCount > 0 ? "bg-emerald-600/20 text-emerald-400 border-emerald-600/40 hover:bg-emerald-600/40 cursor-pointer" : "bg-slate-800/40 text-slate-600 border-slate-700/40 cursor-not-allowed"}`}>
-          ⬇ Export Approved CSV {approvedCount > 0 && <span className="bg-emerald-500 text-slate-900 text-xs font-black px-1.5 py-0.5 rounded-full">{approvedCount}</span>}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportAll}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all border bg-blue-600/20 text-blue-400 border-blue-600/40 hover:bg-blue-600/40 cursor-pointer">
+            ⬇ Download All Results <span className="bg-blue-500 text-slate-900 text-xs font-black px-1.5 py-0.5 rounded-full">{transactions.length}</span>
+          </button>
+          <button
+            onClick={exportApproved}
+            disabled={approvedCount === 0}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all border ${approvedCount > 0 ? "bg-emerald-600/20 text-emerald-400 border-emerald-600/40 hover:bg-emerald-600/40 cursor-pointer" : "bg-slate-800/40 text-slate-600 border-slate-700/40 cursor-not-allowed"}`}>
+            ⬇ Export Approved CSV {approvedCount > 0 && <span className="bg-emerald-500 text-slate-900 text-xs font-black px-1.5 py-0.5 rounded-full">{approvedCount}</span>}
+          </button>
+        </div>
       </div>
 
       <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl overflow-hidden">
